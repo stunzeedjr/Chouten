@@ -6,7 +6,20 @@
 //
 
 import Foundation
+import GRDB
 import JavaScriptCore
+
+public struct CollectionItem: Codable, Equatable, Sendable {
+    public var infoData: InfoData
+    public var url: String
+    public var flag: ItemStatus
+    
+    public init(infoData: InfoData, url: String, flag: ItemStatus) {
+        self.infoData = infoData
+        self.url = url
+        self.flag = flag
+    }
+}
 
 public struct InfoData: Codable, Equatable, Sendable {
     public let titles: Titles
@@ -16,10 +29,24 @@ public struct InfoData: Codable, Equatable, Sendable {
     public let banner: String?
     public let status: String?
     public let mediaType: String
-    public let seasons: [SeasonData]
+    public let yearReleased: Int
+    public var seasons: [SeasonData]
     public var mediaList: [MediaList]
 
-    public init(titles: Titles, tags: [String], description: String, poster: String, banner: String?, status: String?, mediaType: String, seasons: [SeasonData], mediaList: [MediaList]) {
+    public var sanitizedDescription: String {
+        let regexPattern = "<[^>]+>"
+
+        do {
+            let regex = try NSRegularExpression(pattern: regexPattern, options: .caseInsensitive)
+            let range = NSRange(location: 0, length: description.count)
+            let cleanedString = regex.stringByReplacingMatches(in: description, options: [], range: range, withTemplate: "")
+            return cleanedString
+        } catch {
+            return description
+        }
+    }
+
+    public init(titles: Titles, tags: [String], description: String, poster: String, banner: String?, status: String?, mediaType: String, yearReleased: Int, seasons: [SeasonData], mediaList: [MediaList]) {
         self.titles = titles
         self.tags = tags
         self.description = description
@@ -27,6 +54,7 @@ public struct InfoData: Codable, Equatable, Sendable {
         self.banner = banner
         self.status = status
         self.mediaType = mediaType
+        self.yearReleased = yearReleased
         self.seasons = seasons
         self.mediaList = mediaList
     }
@@ -59,6 +87,7 @@ public struct InfoData: Codable, Equatable, Sendable {
         banner: "https://hoststreamsell-pics.s3.amazonaws.com/600c26a209974338f4a579055e7ef61f_big.jpg",
         status: "Finished",
         mediaType: "Episodes",
+        yearReleased: 2024,
         seasons: [],
         mediaList: [
             MediaList(
@@ -72,8 +101,7 @@ public struct InfoData: Codable, Equatable, Sendable {
                                 url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
                                 number: 1.0,
                                 title: "Movie",
-                                description: nil,
-                                thumbnail: "https://www.protocol.com/media-library/big-buck-bunny.png?id=28250459&width=1245&height=700&quality=85&coordinates=0%2C0%2C0%2C0"
+                                thumbnail: "https://www.protocol.com/media-library/big-buck-bunny.png?id=28250459&width=1245&height=700&quality=85&coordinates=0%2C0%2C0%2C0", description: nil
                             )
                         ]
                     )
@@ -97,6 +125,7 @@ public struct InfoData: Codable, Equatable, Sendable {
         banner: nil,
         status: "Finished",
         mediaType: "Episodes",
+        yearReleased: 2024,
         seasons: [],
         mediaList: [
             MediaList(
@@ -106,7 +135,7 @@ public struct InfoData: Codable, Equatable, Sendable {
                         id: "",
                         title: "",
                         items: [
-                            MediaItem(url: "", number: 1.0, title: "Title", description: "Description", thumbnail: "https://cdn.pixabay.com/photo/2019/07/22/20/36/mountains-4356017_1280.jpg")
+                            MediaItem(url: "", number: 1.0, title: "Title", thumbnail: "https://cdn.pixabay.com/photo/2019/07/22/20/36/mountains-4356017_1280.jpg", description: "Description")
                         ]
                     )
                 ]
@@ -119,7 +148,7 @@ public struct InfoData: Codable, Equatable, Sendable {
 public struct SeasonData: Codable, Equatable, Sendable {
     public let name: String
     public let url: String
-    public let selected: Bool?
+    public var selected: Bool?
 
     public init(name: String, url: String, selected: Bool? = nil) {
         self.name = name
@@ -141,37 +170,56 @@ public struct MediaList: Codable, Equatable, Sendable {
 
 public struct Pagination: Codable, Equatable, Sendable {
     public let id: String
-    public let title: String
+    public let title: String?
     public let items: [MediaItem]
 
-    public init(id: String, title: String, items: [MediaItem]) {
+    public init(id: String, title: String?, items: [MediaItem]) {
         self.id = id
         self.title = title
         self.items = items
     }
 }
 
-public struct MediaItem: Codable, Equatable, Hashable, Sendable {
+public struct MediaItem: Codable, Equatable, Hashable, Sendable, FetchableRecord, PersistableRecord {
     public let url: String
     public let number: Double
     public let title: String?
-    public let language: String?
-    public let description: String?
     public let thumbnail: String?
+    public let description: String?
+    public let indicator: String?
+    public var isWatched = false
 
-    public init(url: String, number: Double, title: String? = nil, language: String? = nil, description: String? = nil, thumbnail: String? = nil) {
+    public var sanitizedDescription: String? {
+        let regexPattern = "<[^>]+>"
+
+        if let description {
+            do {
+                let regex = try NSRegularExpression(pattern: regexPattern, options: .caseInsensitive)
+                let range = NSRange(location: 0, length: description.count)
+                let cleanedString = regex.stringByReplacingMatches(in: description, options: [], range: range, withTemplate: "")
+                return cleanedString
+            } catch {
+                return description
+            }
+        } else {
+            return description
+        }
+    }
+
+    public init(url: String, number: Double, title: String? = nil, thumbnail: String? = nil, description: String? = nil, indicator: String? = nil, isWatched: Bool = false) {
         self.url = url
         self.number = number
         self.title = title
-        self.language = language
-        self.description = description
         self.thumbnail = thumbnail
+        self.description = description
+        self.indicator = indicator
+        self.isWatched = isWatched
     }
 
-    public static let sample = Self(url: "", number: 1.0, title: "Title", description: "Description", thumbnail: "https://cdn.pixabay.com/photo/2019/07/22/20/36/mountains-4356017_1280.jpg")
+    public static let sample = Self(url: "", number: 1.0, title: "Title", thumbnail: "https://cdn.pixabay.com/photo/2019/07/22/20/36/mountains-4356017_1280.jpg", description: "Description")
 }
 
-public struct Titles: Codable, Equatable, Sendable {
+public struct Titles: Codable, Equatable, Sendable, Hashable {
     public let primary: String
     public let secondary: String?
 
@@ -212,16 +260,17 @@ extension InfoData {
             return nil
         }
 
+        guard let yearReleased = jsValue["yearReleased"]?.toInt32() else {
+            print("Failed to convert 'yearReleased'")
+            return nil
+        }
+
         guard let seasonsJSValue = jsValue["seasons"] else {
             print("Failed to convert 'seasons'")
             return nil
         }
 
-        print(seasonsJSValue)
-
         let seasons: [SeasonData] = seasonsJSValue.toArray().compactMap { element in
-            print(element)
-
             if let jsElement = element as? [String: Any] {
                 guard let name = jsElement["name"] as? String, let url = jsElement["url"] as? String
                 else {
@@ -275,6 +324,7 @@ extension InfoData {
             banner: banner,
             status: computedStatus,
             mediaType: computedMediaType,
+            yearReleased: Int(yearReleased),
             seasons: seasons,
             mediaList: []
         )
@@ -359,10 +409,10 @@ extension MediaItem {
         }
 
         let title = jsValue["title"]?.toString()
-        let language = jsValue["language"]?.toString()
+        let indicator = jsValue["indicator"]?.toString()
         let description = jsValue["description"]?.toString()
         let image = jsValue["thumbnail"]?.toString()
 
-        self.init(url: url, number: number, title: title, language: language, description: description, thumbnail: image)
+        self.init(url: url, number: number, title: title, thumbnail: image, description: description, indicator: indicator)
     }
 }

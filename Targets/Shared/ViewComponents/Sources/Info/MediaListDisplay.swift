@@ -21,8 +21,8 @@ public class MediaListDisplay: UIView {
         return contentView
     }()
 
-    let mediaListIndex: Int = 0
-    let paginationIndex: Int = 0
+    var mediaListIndex: Int = 0
+    var paginationIndex: Int = 0
 
     public weak var delegate: MediaListDelegate?
 
@@ -56,16 +56,23 @@ public class MediaListDisplay: UIView {
         addSubview(contentView)
     }
 
-    public func updateData() {
+    public func updateData(with index: Int? = nil) {
+        if let index {
+            mediaListIndex = index
+        }
+
         contentView.arrangedSubviews
             .forEach { $0.removeFromSuperview() }
 
         let list = infoData.mediaList[mediaListIndex]
         let pagination = list.pagination[paginationIndex]
         let items = pagination.items
+
+        let watchedUrls = DatabaseManager.shared.fetchWatchedURLs()
+
         for index in 0..<items.count {
             let item: MediaItem = items[index]
-            let mediaItemDisplay = MediaItemDisplay(item: item)
+            let mediaItemDisplay = MediaItemDisplay(item: item, index: index, watched: watchedUrls.contains(item.url))
 
             mediaItemDisplay.delegate = self
 
@@ -76,7 +83,6 @@ public class MediaListDisplay: UIView {
                 mediaItemDisplay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor)
             ])
         }
-
     }
 
     // MARK: Layout
@@ -85,13 +91,13 @@ public class MediaListDisplay: UIView {
         NSLayoutConstraint.activate([
             contentView.leadingAnchor.constraint(equalTo: leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            contentView.heightAnchor.constraint(equalTo: heightAnchor)
+            contentView.heightAnchor.constraint(equalTo: heightAnchor, constant: -20)
         ])
     }
 }
 
 extension MediaListDisplay: MediaItemDelegate {
-    public func tapped(_ data: MediaItem) {
-        self.delegate?.mediaItemTapped(data)
+    public func tapped(_ data: MediaItem, index: Int) {
+        self.delegate?.mediaItemTapped(data, index: index)
     }
 }

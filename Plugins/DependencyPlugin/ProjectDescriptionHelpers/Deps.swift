@@ -27,6 +27,7 @@ public enum Features: String, CaseIterable, QualifiedName {
   case settings
   case video
   case repo
+  case book
 
   public var project: TargetDependency {
     .project(target: name, path: .relativeToRoot("Targets/Features/\(name)"))
@@ -37,8 +38,8 @@ public enum Features: String, CaseIterable, QualifiedName {
 
 public enum Clients: String, CaseIterable, QualifiedName {
   case repoClient
-  case dataClient
   case fileClient
+  case databaseClient
   case moduleClient
   case relayClient
 
@@ -71,4 +72,5 @@ extension ExternalDependencies {
   public static let tagged = Self(.external(name: "Tagged"))
   public static let texture = Self(.external(name: "Texture"))
   public static let zipFoundation = Self(.external(name: "ZIPFoundation"))
+  public static let grdb = Self(.external(name: "GRDB"))
 }

@@ -12,7 +12,9 @@ import UIKit
 
 class MediaItemDisplay: UIView {
 
-    let mediaItem: MediaItem
+    var mediaItem: MediaItem
+    let index: Int
+    var watched: Bool
 
     // swiftlint:disable lower_acl_than_parent
     public weak var delegate: MediaItemDelegate?
@@ -20,6 +22,8 @@ class MediaItemDisplay: UIView {
 
     override init(frame: CGRect) {
         self.mediaItem = MediaItem.sample
+        self.index = 0
+        self.watched = false
         super.init(frame: frame)
         configure()
         setConstraints()
@@ -27,13 +31,17 @@ class MediaItemDisplay: UIView {
 
     required init?(coder: NSCoder) {
         self.mediaItem = MediaItem.sample
+        self.index = 0
+        self.watched = false
         super.init(coder: coder)
         configure()
         setConstraints()
     }
 
-    init(item: MediaItem) {
+    init(item: MediaItem, index: Int, watched: Bool = false) {
         self.mediaItem = item
+        self.index = index
+        self.watched = watched
         super.init(frame: .zero)
         configure()
         setConstraints()
@@ -153,11 +161,11 @@ class MediaItemDisplay: UIView {
         // set data
         titleLabel.text = mediaItem.title ?? "Episode \(mediaItem.number.removeTrailingZeros())"
         subtitleLabel.text = "Episode \(mediaItem.number.removeTrailingZeros())"
-        descriptionLabel.text = mediaItem.description
-        indicatorLabel.text = mediaItem.language
+        descriptionLabel.text = mediaItem.sanitizedDescription
+        indicatorLabel.text = mediaItem.indicator
 
         indicatorWrapper.addSubview(indicatorLabel)
-        if mediaItem.language != nil {
+        if mediaItem.indicator != nil {
             mainView.addSubview(indicatorWrapper)
         }
 
@@ -168,6 +176,12 @@ class MediaItemDisplay: UIView {
         let onTap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         self.isUserInteractionEnabled = true
         self.addGestureRecognizer(onTap)
+
+        let longPressGestureRecognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPressGestureRecognizer.minimumPressDuration = 0.2
+        self.addGestureRecognizer(longPressGestureRecognizer)
+
+        self.alpha = watched ? 0.5 : 1.0
     }
 
     private func setConstraints() {
@@ -191,7 +205,7 @@ class MediaItemDisplay: UIView {
             titleLabel.trailingAnchor.constraint(equalTo: verticalStack.trailingAnchor)
         ])
 
-        if mediaItem.language != nil {
+        if mediaItem.indicator != nil {
             NSLayoutConstraint.activate([
                 indicatorWrapper.trailingAnchor.constraint(equalTo: mainView.trailingAnchor, constant: -8),
                 indicatorWrapper.topAnchor.constraint(equalTo: mainView.topAnchor, constant: 8),
@@ -214,6 +228,31 @@ class MediaItemDisplay: UIView {
     }
 
     @objc func handleTap() {
-        self.delegate?.tapped(mediaItem)
+        self.delegate?.tapped(mediaItem, index: index)
     }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            // Set the watched property and update the database immediately
+            self.watched = true
+            self.mediaItem.isWatched = true
+            DatabaseManager.shared.updateMediaItem(self.mediaItem)
+
+            // Perform the animation
+            UIView.animate(withDuration: 0.2) {
+                self.alpha = 0.5
+            }
+        case .changed:
+            // Perform the animation
+            UIView.animate(withDuration: 0.2) {
+                self.alpha = 0.5
+            }
+        case .ended, .cancelled:
+            break
+        default:
+            break
+        }
+    }
+
 }

@@ -98,8 +98,7 @@ public class ModuleSelectionCard: UIView {
             .appendingPathComponent(repoId)
             .appendingPathComponent("Modules")
             .appendingPathComponent(module.id)
-            .appendingPathComponent("icon.jpg") {
-            print("Loading \(imageUrl)")
+            .appendingPathComponent("icon.png") {
             let imageData = try? Data(contentsOf: imageUrl)
 
             if let imageData {

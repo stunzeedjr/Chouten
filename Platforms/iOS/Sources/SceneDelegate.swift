@@ -61,7 +61,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         if let windowScene = scene as? UIWindowScene {
             let window = UIWindow(windowScene: windowScene)
-            window.rootViewController = UINavigationController(rootViewController: AppViewController(module))
+            window.rootViewController = SplashScreenViewController(module) // AppViewController(module)
             self.window = window
             window.makeKeyAndVisible()
 
@@ -147,14 +147,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func handleOpenURL(_ url: URL) {
-        print(url)
+        //print(url)
         // NotificationCenter.default.post(name: .sharedJson, object: nil, userInfo: ["url": url])
     }
 
     @objc func handleUpdatedSelectedModule(_ notification: Notification) {
         // Handle the notification here
-        print("SceneDelegate received notification from ViewController")
-
         do {
             if let moduleId = userDefaults.string(forKey: "selectedModuleId") {
                 let modulePath = try repoClient.getModulePathForId(id: moduleId)

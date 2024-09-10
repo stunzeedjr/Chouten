@@ -43,7 +43,6 @@ public class AppViewTopBar: UIView {
         view.clipsToBounds = true
         view.layer.borderColor = ThemeManager.shared.getColor(for: .border).cgColor
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.isUserInteractionEnabled = true
         return view
     }()
 
@@ -53,8 +52,13 @@ public class AppViewTopBar: UIView {
         imageView.tintColor = ThemeManager.shared.getColor(for: .fg)
         imageView.contentMode = .scaleAspectFill
         imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.isUserInteractionEnabled = false
         return imageView
+    }()
+
+    public let interactionWrapper: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
 
     public weak var delegate: AppViewTopBarDelegate?
@@ -81,24 +85,20 @@ public class AppViewTopBar: UIView {
         settingsImageWrapper.addSubview(settingsImage)
         wrapper.addSubview(settingsImageWrapper)
         addSubview(wrapper)
+        addSubview(interactionWrapper)
 
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(showSettingsPopover))
-        settingsImageWrapper.addGestureRecognizer(tapGesture)
+        interactionWrapper.isUserInteractionEnabled = true
+        interactionWrapper.addGestureRecognizer(tapGesture)
     }
 
     private func setupConstraints() {
-        let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first as? UIWindowScene
-        let window = windowScene?.windows.first
-
-        let topPadding = window?.safeAreaInsets.top ?? 0.0
-
         NSLayoutConstraint.activate([
             wrapper.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width + 2),
             wrapper.leadingAnchor.constraint(equalTo: leadingAnchor, constant: -1),
             wrapper.trailingAnchor.constraint(equalTo: trailingAnchor, constant: 1),
             wrapper.topAnchor.constraint(equalTo: topAnchor, constant: -1),
-            wrapper.heightAnchor.constraint(equalToConstant: max(topPadding + 64, 64)),
+            wrapper.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             blurView.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
             blurView.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
@@ -115,7 +115,12 @@ public class AppViewTopBar: UIView {
             settingsImageWrapper.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -12),
 
             settingsImage.centerXAnchor.constraint(equalTo: settingsImageWrapper.centerXAnchor),
-            settingsImage.centerYAnchor.constraint(equalTo: settingsImageWrapper.centerYAnchor)
+            settingsImage.centerYAnchor.constraint(equalTo: settingsImageWrapper.centerYAnchor),
+
+            interactionWrapper.leadingAnchor.constraint(equalTo: leadingAnchor),
+            interactionWrapper.trailingAnchor.constraint(equalTo: trailingAnchor),
+            interactionWrapper.topAnchor.constraint(equalTo: topAnchor),
+            interactionWrapper.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 

@@ -9,6 +9,7 @@ import Architecture
 import ComposableArchitecture
 import SharedModels
 import UIKit
+import Combine
 import ViewComponents
 
 private var associatedStringHandle: UInt8 = 0
@@ -191,8 +192,8 @@ public class RepoInstallPopup: UIViewController {
 
     let installButton: UIButton = {
         var configuration = UIButton.Configuration.plain()
-        configuration.title = "Install repo"
-        configuration.attributedTitle = AttributedString("Install repo", attributes: AttributeContainer([
+        configuration.title = "Install"
+        configuration.attributedTitle = AttributedString("Install", attributes: AttributeContainer([
             .font: UIFont.systemFont(ofSize: 14, weight: .bold),
             .foregroundColor: UIColor.fg
         ]))
@@ -208,7 +209,6 @@ public class RepoInstallPopup: UIViewController {
 
     let repoPicture: UIImageView = {
         let imageView = UIImageView()
-        // imageView.image = UIImage(named: "pfp")
         imageView.layer.borderWidth = 0.5
         imageView.layer.borderColor = ThemeManager.shared.getColor(for: .border).cgColor
         imageView.layer.cornerRadius = 12
@@ -244,6 +244,54 @@ public class RepoInstallPopup: UIViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         return stack
     }()
+    
+    let installingHorizontalStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 8
+        stack.distribution = .equalSpacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isHidden = true
+        return stack
+    }()
+    
+    let installingVerticalStack: UIStackView = {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        return stack
+    }()
+    
+    let installingLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Installing..."
+        label.font = .systemFont(ofSize: 14, weight: .semibold)
+        label.textColor = ThemeManager.shared.getColor(for: .fg)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    let installingStatusLabel: UILabel = {
+        let label = UILabel()
+        label.text = "Preparing..."  // Initial status text
+        label.font = .systemFont(ofSize: 12)  // Smaller font size
+        label.textColor = ThemeManager.shared.getColor(for: .fg).withAlphaComponent(0.8)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        return label
+    }()
+    
+    let progressView: CircularProgressView = {
+        let view = CircularProgressView()
+        view.progressColor = ThemeManager.shared.getColor(for: .accent)
+        view.trackColor = UIColor(white: 0.9, alpha: 0.5)
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
+    private var cancellables: Set<AnyCancellable> = []
 
     var store: Store<RepoFeature.State, RepoFeature.Action>
     var selectedModules: [String] = []
@@ -265,75 +313,101 @@ public class RepoInstallPopup: UIViewController {
 
         observe { [weak self] in
             guard let self else { return }
+            
+            if store.isInstalling {
+                installingHorizontalStack.isHidden = false
+                installButton.isHidden = true
+            } else {
+                installingHorizontalStack.isHidden = true
+                installButton.isHidden = false
+            }
+            
+            store.publisher.progress.sink { [weak self] progress in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    self.progressView.progress = progress
+                }
+            }
+            .store(in: &cancellables)
+            
+            store.publisher.installingStatus.sink { [weak self] status in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    self.installingStatusLabel.text = status
+                }
+            }
+            .store(in: &cancellables)
 
             if let metadata = store.installRepoMetadata {
-                print(metadata)
-                // remove titleCard
-                noUrlBox.removeFromSuperview()
-
-                // add icon, titles, modules ui
-                let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-
-                if let imageUrl = documentsDirectory?.appendingPathComponent("Repos").appendingPathComponent(metadata.id).appendingPathComponent("icon.png") {
-                    let imageData = try? Data(contentsOf: imageUrl)
-
-                    if let imageData {
-                        let image = UIImage(data: imageData)
-
-                        repoPicture.image = image
-                    }
+                if noUrlBox.superview != nil {
+                   noUrlBox.removeFromSuperview()
                 }
+                
+                if repoPicture.superview == nil {
+                    // add icon, titles, modules ui
+                    let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
 
-                self.titleLabel.text = metadata.title
-                self.authorLabel.text = metadata.author
+                    if let imageUrl = documentsDirectory?.appendingPathComponent("Repos").appendingPathComponent(metadata.id).appendingPathComponent("icon.png") {
+                        let imageData = try? Data(contentsOf: imageUrl)
 
-                // run on main thread
-                DispatchQueue.main.async {
-                    self.view.addSubview(self.repoPicture)
-                    self.view.addSubview(self.titleLabel)
-                    self.view.addSubview(self.authorLabel)
+                        if let imageData {
+                            let image = UIImage(data: imageData)
 
-                    self.view.addSubview(self.installAlignsideLabel)
-
-                    self.view.addSubview(self.modulesStack)
-
-                    if let modules = metadata.modules {
-                        for module in modules {
-                            let card = ModuleSelectionCard(module, id: metadata.id, selected: false)
-                            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(self.handleTap(_:)))
-                            tapGesture.associatedString = card.module.id
-                            card.addGestureRecognizer(tapGesture)
-                            self.modulesStack.addArrangedSubview(card)
+                            repoPicture.image = image
                         }
                     }
 
-                    self.view.addSubview(self.installButton)
-                    self.installButton.addTarget(self, action: #selector(self.installRepo), for: .touchUpInside)
+                    self.titleLabel.text = metadata.title
+                    self.authorLabel.text = metadata.author
 
-                    NSLayoutConstraint.activate([
-                        self.repoPicture.widthAnchor.constraint(equalToConstant: 80),
-                        self.repoPicture.heightAnchor.constraint(equalToConstant: 80),
-                        self.repoPicture.topAnchor.constraint(equalTo: self.disclaimerDescription.bottomAnchor, constant: 20),
-                        self.repoPicture.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                    // run on main thread
+                    DispatchQueue.main.async {
+                        self.view.addSubview(self.repoPicture)
+                        self.view.addSubview(self.titleLabel)
+                        self.view.addSubview(self.authorLabel)
 
-                        self.titleLabel.leadingAnchor.constraint(equalTo: self.repoPicture.trailingAnchor, constant: 12),
-                        self.titleLabel.bottomAnchor.constraint(equalTo: self.repoPicture.bottomAnchor, constant: -8),
+                        self.view.addSubview(self.installAlignsideLabel)
 
-                        self.authorLabel.leadingAnchor.constraint(equalTo: self.titleLabel.leadingAnchor),
-                        self.authorLabel.bottomAnchor.constraint(equalTo: self.titleLabel.topAnchor, constant: -2),
+                        self.view.addSubview(self.modulesStack)
 
-                        self.installAlignsideLabel.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
-                        self.installAlignsideLabel.topAnchor.constraint(equalTo: self.repoPicture.bottomAnchor, constant: 12),
+                        if let modules = metadata.modules {
+                            for module in modules {
+                                let card = ModuleSelectionCard(module, id: metadata.id, selected: false)
+                                let tapGesture = UITapGestureRecognizer(target: self, action: #selector(self.handleTap(_:)))
+                                tapGesture.associatedString = card.module.id
+                                card.addGestureRecognizer(tapGesture)
+                                self.modulesStack.addArrangedSubview(card)
+                            }
+                        }
 
-                        self.modulesStack.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
-                        self.modulesStack.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
-                        self.modulesStack.topAnchor.constraint(equalTo: self.installAlignsideLabel.bottomAnchor, constant: 12),
+                        self.view.addSubview(self.installButton)
+                        self.installButton.addTarget(self, action: #selector(self.installRepo), for: .touchUpInside)
 
-                        self.installButton.bottomAnchor.constraint(equalTo: self.cancelButton.topAnchor, constant: -8),
-                        self.installButton.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
-                        self.installButton.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
-                        self.installButton.heightAnchor.constraint(equalToConstant: 40)
-                    ])
+                        NSLayoutConstraint.activate([
+                            self.repoPicture.widthAnchor.constraint(equalToConstant: 80),
+                            self.repoPicture.heightAnchor.constraint(equalToConstant: 80),
+                            self.repoPicture.topAnchor.constraint(equalTo: self.disclaimerDescription.bottomAnchor, constant: 20),
+                            self.repoPicture.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+
+                            self.titleLabel.leadingAnchor.constraint(equalTo: self.repoPicture.trailingAnchor, constant: 12),
+                            self.titleLabel.bottomAnchor.constraint(equalTo: self.repoPicture.bottomAnchor, constant: -8),
+
+                            self.authorLabel.leadingAnchor.constraint(equalTo: self.titleLabel.leadingAnchor),
+                            self.authorLabel.bottomAnchor.constraint(equalTo: self.titleLabel.topAnchor, constant: -2),
+
+                            self.installAlignsideLabel.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                            self.installAlignsideLabel.topAnchor.constraint(equalTo: self.repoPicture.bottomAnchor, constant: 12),
+
+                            self.modulesStack.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                            self.modulesStack.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
+                            self.modulesStack.topAnchor.constraint(equalTo: self.installAlignsideLabel.bottomAnchor, constant: 12),
+
+                            self.installButton.bottomAnchor.constraint(equalTo: self.cancelButton.topAnchor, constant: -8),
+                            self.installButton.leadingAnchor.constraint(equalTo: self.view.leadingAnchor, constant: 20),
+                            self.installButton.trailingAnchor.constraint(equalTo: self.view.trailingAnchor, constant: -20),
+                            self.installButton.heightAnchor.constraint(equalToConstant: 40)
+                        ])
+                    }
                 }
             }
         }
@@ -346,6 +420,8 @@ public class RepoInstallPopup: UIViewController {
     }
 
     private func configure() {
+        cancelButton.addTarget(self, action: #selector(dismissPopup), for: .touchUpInside)
+        
         view.backgroundColor = ThemeManager.shared.getColor(for: .bg)
 
         textField.delegate = self
@@ -359,6 +435,14 @@ public class RepoInstallPopup: UIViewController {
         view.addSubview(cancelButton)
 
         view.addSubview(topbar)
+        
+        installingVerticalStack.addArrangedSubview(installingLabel)
+        installingVerticalStack.addArrangedSubview(installingStatusLabel)
+        
+        installingHorizontalStack.addArrangedSubview(installingVerticalStack)
+        installingHorizontalStack.addArrangedSubview(progressView)
+        
+        view.addSubview(installingHorizontalStack)
     }
 
     private func setupConstraints() {
@@ -396,7 +480,16 @@ public class RepoInstallPopup: UIViewController {
             cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             cancelButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             cancelButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -40),
-            cancelButton.heightAnchor.constraint(equalToConstant: 40)
+            cancelButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            installingHorizontalStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            installingHorizontalStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            installingHorizontalStack.bottomAnchor.constraint(equalTo: cancelButton.topAnchor, constant: -10),
+            installingHorizontalStack.heightAnchor.constraint(equalToConstant: 40),
+
+            progressView.trailingAnchor.constraint(equalTo: installingHorizontalStack.trailingAnchor),
+            progressView.widthAnchor.constraint(equalToConstant: 24),
+            progressView.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
@@ -404,7 +497,6 @@ public class RepoInstallPopup: UIViewController {
         modulesStack.arrangedSubviews.forEach { view in
             if let moduleCard = view as? ModuleSelectionCard {
                 moduleCard.selected = selectedModules.contains(moduleCard.module.id)
-                print(moduleCard.selected)
                 UIView.animate(withDuration: 0.2) {
                     moduleCard.reload()
                 }
@@ -421,8 +513,11 @@ public class RepoInstallPopup: UIViewController {
             }
         }
 
-        print(selectedModules)
         updateSelectedModules()
+    }
+    
+    @objc private func dismissPopup() {
+        dismiss(animated: true, completion: nil)
     }
 }
 
@@ -437,10 +532,9 @@ extension RepoInstallPopup: UITextFieldDelegate {
         // Call at the end
         if let text = textField.text {
             // User input goes here.
-            print(text)
             store.send(.view(.fetch(url: text)))
             // store.send(.view(.install(url: text)))
         }
     }
 }
-// swiftlint:enable type_body_length
+

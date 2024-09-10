@@ -23,6 +23,11 @@ public struct RepoFeature: Reducer {
         public var installRepoMetadata: RepoMetadata? = nil
         // swiftlint:enable redundant_optional_initialization
         public var repos: [RepoMetadata] = []
+        
+        public var isInstalling = false
+        public var installingStatus = "Preparing..."
+        public var progress: Double = 0.0
+        
         public init() { }
     }
 
@@ -39,6 +44,11 @@ public struct RepoFeature: Reducer {
             case installModule(_ metadata: RepoMetadata, id: String)
 
             case setMetadata(_ metadata: RepoMetadata)
+            
+            case setInstalling(_ data: Bool)
+            case setInstallingStatus(_ status: String)
+            case updateProgress(_ progress: Double)
+            case showErrorMessage(_ message: String)
         }
 
         @CasePathable
@@ -108,77 +118,124 @@ public struct RepoFeature: Reducer {
     public init() { }
 
     @ReducerBuilder<State, Action> public var body: some ReducerOf<Self> {
-      Reduce { state, action in
-        switch action {
-        case let .view(viewAction):
-          switch viewAction {
-          case .onAppear:
-              let repos = getRepos()
+        Reduce { state, action in
+            switch action {
+            case let .view(viewAction):
+                switch viewAction {
+                case .onAppear:
+                    let repos = getRepos()
 
-              state.repos = repos
-              return .none
-          case .install(let url):
-              guard let checkedUrl = URL(string: url) else {
-                  return .send(.view(.onAppear))
-              }
+                    state.repos = repos
+                    return .none
+                case .install(let url):
+                    guard let checkedUrl = URL(string: url) else {
+                        return .send(.view(.onAppear))
+                    }
 
-              return .merge(
-                  .run { _ in
-                      do {
-                          try await repoClient.installRepo(checkedUrl)
-                      } catch {
-                          print(error.localizedDescription)
-                      }
-                  }
-              )
-          case .fetch(let url):
-              guard let checkedUrl = URL(string: url) else {
-                  return .send(.view(.onAppear))
-              }
+                    return .merge(
+                        .run { send in
+                            do {
+                                try await repoClient.installRepo(checkedUrl)
+                            } catch {
+                                print(error.localizedDescription)
+                                await send(.view(.showErrorMessage("Error installing repository! Possible internal error.")))
+                            }
+                        }
+                    )
+                case .fetch(let url):
+                    guard let checkedUrl = URL(string: url) else {
+                        return .send(.view(.onAppear))
+                    }
 
-              return .merge(
-                  .run { send in
-                      do {
-                          let repoMetadata = try await repoClient.fetchRepoDetails(checkedUrl)
-                          if let repoMetadata {
-                              await send(.view(.setMetadata(repoMetadata)))
-                          }
-                      } catch {
-                          print(error.localizedDescription)
-                      }
-                  }
-              )
-          case let .installWithModules(metadata, modules):
-              do {
-                  // install metadata
-                  try repoClient.installRepoMetadata(metadata)
+                    return .merge(
+                        .run { send in
+                            do {
+                                await send(.view(.setInstalling(false)))
+                                await send(.view(.updateProgress(0.0)))
+                                
+                                let repoMetadata = try await repoClient.fetchRepoDetails(checkedUrl)
+                                if let repoMetadata {
+                                    await send(.view(.setMetadata(repoMetadata)))
+                                }
+                            } catch {
+                                print(error.localizedDescription)
+                                await send(.view(.showErrorMessage("Invalid URL/unable to fetch repository.")))
+                            }
+                        }
+                    )
+                case let .installWithModules(metadata, modules):
+                    return .run { send in
+                        await send(.view(.setInstalling(true)))
+                        await send(.view(.updateProgress(0.0)))
+                        do {
+                            // install metadata
+                            await send(.view(.setInstallingStatus("Installing metadata...")))
+                            try repoClient.installRepoMetadata(metadata)
 
-                  // loop through modules and install them
-                  if let metadataModules = metadata.modules {
-                      for module in metadataModules where modules.contains(where: { $0 == module.id }) {
-                          Task {
-                              try await repoClient.installModule(metadata, module.id)
-                          }
-                      }
-                  }
-              } catch {
-                  print(error.localizedDescription)
-              }
-              return .none
-          case let .installModule(metadata, id):
-              return .run { _ in
-                  do {
-                      // install metadata
-                      try await repoClient.installModule(metadata, id)
-                  } catch {
-                      print(error.localizedDescription)
-                  }
-              }
-          case .setMetadata(let metadata):
-              state.installRepoMetadata = metadata
-              return .none
-          }
+                            // loop through modules and install them
+                            await send(.view(.setInstallingStatus("Installing modules...")))
+                            if let metadataModules = metadata.modules {
+                                let totalModules = Double(modules.count)
+                                var currentProgress = 0.1
+                                var currentIndex = 0
+                                
+                                for module in metadataModules where modules.contains(where: { $0 == module.id }) {
+                                    try await repoClient.installModule(metadata, module.id)
+                                    
+                                    currentIndex += 1
+                                    currentProgress = CGFloat(currentIndex) / totalModules
+                                    await send(.view(.updateProgress(currentProgress)))
+                                    
+                                    print("Installed module \(module.id)")
+                                }
+                            }
+                            
+                            await send(.view(.updateProgress(1.0)))
+                            
+                            await send(.view(.setInstallingStatus("Finished!")))
+                        } catch {
+                            print(error.localizedDescription)
+                            await send(.view(.setInstallingStatus("Error installing repo! \(error.localizedDescription)")))
+                            await send(.view(.showErrorMessage("Error installing repository with modules! Possible internal error.")))
+                        }
+                    }
+                case let .installModule(metadata, id):
+                    return .run { _ in
+                        do {
+                            // install metadata
+                            try await repoClient.installModule(metadata, id)
+                        } catch {
+                            print(error.localizedDescription)
+                        }
+                    }
+                case .setInstalling(let data):
+                    state.isInstalling = data
+                    return .none
+                case .setInstallingStatus(let status):
+                    state.installingStatus = status
+                    return .none
+                case .setMetadata(let metadata):
+                    state.installRepoMetadata = metadata
+                    return .none
+                    
+                case .showErrorMessage(let message):
+                    return .run { send in
+                        DispatchQueue.main.async {
+                            if let rootView = UIApplication.shared.windows.first?.rootViewController?.view {
+                                rootView.showErrorDisplay(
+                                    message: "Error",
+                                    description: message,
+                                    indicator: "System",
+                                    type: .error
+                                )
+                            }
+                        }
+                    }
+                case .updateProgress(let progress):
+                   state.progress = progress
+                   return .none
+                }
+            }
         }
-      }
     }
 }

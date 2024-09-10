@@ -35,6 +35,7 @@ public class InfoViewRefactor: LoadableViewControllerBase {
             initialState: .init(),
             reducer: { InfoFeature() }
         )
+        
         super.init(loadingViewController: loadingInfoVC, errorViewController: errorInfoVC, successViewController: successInfoVC)
 
         store.send(.view(.onAppear(url)))
@@ -51,30 +52,18 @@ public class InfoViewRefactor: LoadableViewControllerBase {
     override public func viewDidLoad() {
         super.viewDidLoad()
 
-        // view.addSubview(loadingInfoVC.view)
-        // addChild(loadingInfoVC)
-
-//        let activityIndicator = UIActivityIndicatorView(style: .medium)
-//        activityIndicator.color ThemeManager.shared.getColor(for: .fg)
-//
-//        // Center the activity indicator in the view
-//        activityIndicator.center = loadingInfoVC.view.center
-//
-//        loadingInfoVC.view.addSubview(activityIndicator)
-//
-//        activityIndicator.startAnimating()
-
         view.backgroundColor = ThemeManager.shared.getColor(for: .bg)
+
+        successInfoVC.delegate = self
 
         observe { [weak self] in
             guard let self else { return }
 
             if let infoData = self.store.infoData, let success = self.successViewController as? SuccessInfoVC {
-                print("updating info")
-
                 success.doneLoading = self.store.doneLoading
 
                 success.infoData = infoData
+                success.currentModuleType = self.store.currentModuleType
 
                 success.updateData()
 
@@ -112,5 +101,39 @@ public class InfoViewRefactor: LoadableViewControllerBase {
             topBar.heightAnchor.constraint(equalToConstant: topPadding + 40),
             topBar.widthAnchor.constraint(equalToConstant: UIScreen.main.bounds.width)
         ])
+    }
+}
+
+extension InfoViewRefactor: SuccessInfoVCDelegate {
+    public func fetchCollections() -> [HomeSection] {
+        return store.collections
+    }
+    
+    public func fetchIsInCollections() -> [HomeSectionChecks] {
+        return store.isInCollections
+    }
+    
+    public func fetchIsInAnyCollection() -> Bool {
+        return store.isInAnyCollection
+    }
+    
+    public func addItemToCollection(collection: HomeSection) {
+        store.send(.view(.addToCollection(collection)))
+    }
+    
+    public func fetchMedia(url: String, newIndex: Int) {
+        store.send(.view(.fetchNewSeason(url, newIndex: newIndex)))
+    }
+    
+    public func removeFromCollection(collection: HomeSection) {
+        store.send(.view(.removeFromCollection(collection)))
+    }
+    
+    public func updateFlag(status: ItemStatus) {
+        store.send(.view(.updateFlag(status)))
+    }
+    
+    public func updateItemInCollection(collection: HomeSection) {
+        store.send(.view(.updateItemInCollection(collection)))
     }
 }

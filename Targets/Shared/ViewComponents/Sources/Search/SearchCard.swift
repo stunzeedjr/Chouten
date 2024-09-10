@@ -11,9 +11,9 @@ import SharedModels
 import UIKit
 
 public class SearchCard: UIView {
-    public var data: SearchData
+    public var data: SearchData?
 
-    public init(data: SearchData) {
+    public init(data: SearchData?) {
         self.data = data
         super.init(frame: .zero)
         configure()
@@ -131,20 +131,24 @@ public class SearchCard: UIView {
     public func updateData() {
         // Assuming SearchData properties match SectionCard properties
 
-        let imageUrlString = data.img
-        if let imageUrl = URL(string: imageUrlString) {
-            ImagePipeline.shared.loadImage(with: imageUrl) { result in
-                do {
-                    let imageResponse = try result.get()
-                    self.imageView.image = imageResponse.image
-                } catch {
-                    print(error.localizedDescription)
+        if let data {
+            let imageUrlString = data.poster
+            if let imageUrl = URL(string: imageUrlString) {
+                ImagePipeline.shared.loadImage(with: imageUrl) { result in
+                    do {
+                        let imageResponse = try result.get()
+                        self.imageView.image = imageResponse.image
+                    } catch {
+                        print(error.localizedDescription)
+                    }
                 }
             }
-        }
 
-        titleLabel.text = data.title
-        countLabel.text = "\(data.currentCount)/\(data.totalCount)"
-        indicatorLabel.text = data.indicatorText
+            titleLabel.text = data.titles.primary
+            // swiftlint:disable force_unwrapping
+            countLabel.text = "\(data.current != nil ? String(data.current!) : "~")/\(data.total != nil ? String(data.total!) : "~")"
+            // swiftlint:enable force_unwrapping
+            indicatorLabel.text = data.indicator
+        }
     }
 }

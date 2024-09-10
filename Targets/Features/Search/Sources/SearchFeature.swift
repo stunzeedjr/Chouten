@@ -39,6 +39,7 @@ public struct SearchFeature: Reducer {
         @dynamicMemberLookup
         public enum ViewAction: SendableAction {
             case onAppear
+            case clearResult
             case setQuery(_ value: String)
             case clearQuery
             case search
@@ -68,8 +69,13 @@ public struct SearchFeature: Reducer {
           switch viewAction {
           case .onAppear:
               return .none
+          case .clearResult:
+              state.result = nil
+              return .none
           case .setQuery(let value):
               state.query = value
+              state.result = nil
+              if value.isEmpty { return .none }
               return .send(.view(.search))
           case .clearQuery:
               state.query = ""
@@ -95,13 +101,19 @@ public struct SearchFeature: Reducer {
                     !state.result!.results.isEmpty else {
                   state.result = value
                   state.status = .success
+
                   return .none
               }
               state.result!.results += value.results
               // swiftlint:enable force_unwrapping
               state.status = .success
+              state.loading = false
               return .none
           case .paginateSearch:
+              guard let resultInfo = state.result?.info,
+                    state.page < resultInfo.pages else {
+                  return .none
+              }
               if !state.loading {
                   state.page += 1
                   state.loading = true

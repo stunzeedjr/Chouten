@@ -13,14 +13,14 @@ public class SectionList: UIView {
     let section: DiscoverSection
 
     override public init(frame: CGRect) {
-        self.section = .init(title: "", list: [])
+        self.section = .init(title: "", type: 0, list: [])
         super.init(frame: frame)
         configure()
         setConstraints()
     }
 
     public required init?(coder: NSCoder) {
-        self.section = .init(title: "", list: [])
+        self.section = .init(title: "", type: 0, list: [])
         super.init(coder: coder)
         configure()
         setConstraints()
@@ -89,7 +89,7 @@ public class SectionList: UIView {
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             // scrollView.widthAnchor.constraint(equalTo: widthAnchor),
-            scrollView.heightAnchor.constraint(equalToConstant: 260),
+            scrollView.heightAnchor.constraint(equalToConstant: 200),
             // scrollView.centerXAnchor.constraint(equalTo: centerXAnchor),
 
             scrollViewContent.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),

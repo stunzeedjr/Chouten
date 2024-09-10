@@ -18,12 +18,10 @@ extension JSContext {
     public func callAsyncFunction(_ key: String) async throws -> JSValue {
         try await withCheckedThrowingContinuation { continuation in
             let onFulfilled: @convention(block) (JSValue) -> Void = { value in
-                print("fulfilled")
                 continuation.resume(returning: value)
             }
 
             let onRejected: @convention(block) (JSValue) -> Void = { reason in
-                print("rejected")
                 let error = NSError(domain: key, code: 0, userInfo: [NSLocalizedDescriptionKey: "\(reason)"])
                 continuation.resume(throwing: error)
             }
@@ -75,10 +73,18 @@ public class Response: Codable {
     }
 }
 
+public enum ModuleType {
+    case video
+    case book
+    case text
+}
+
 // swiftlint:disable type_body_length
 class Relay: ObservableObject {
     let logger = Logger(subsystem: "com.inumaki.Chouten", category: "RelayClient")
     static let shared = Relay()
+
+    var type: ModuleType = .video
 
     // swiftlint:disable redundant_type_annotation
     var context: JSContext = JSContext()
@@ -97,19 +103,91 @@ class Relay: ObservableObject {
         }
     }
 
+    func checkModuleType() {
+        let typeCheckScript = """
+        function checkContent() {
+            if(typeof instance.sources === 'function' && typeof instance.streams === 'function') { return "video" }
+            else if(typeof instance.pages === 'function') { return "book" }
+        }
+        """
+        context.evaluateScript(typeCheckScript)
+
+        let contentType = context.evaluateScript("checkContent()")?.toString()
+        let isBook = context.evaluateScript("typeof instance.pages === 'function'")?.toBool()
+
+        switch contentType {
+        case "video":
+            type = .video
+        case "book":
+            type = .book
+        default:
+            type = .video
+        }
+    }
+
     func registerInContext(_ context: JSContext) {
-        let consoleLog: @convention(block) (String) -> Void = { message in
+        let consoleLog: @convention(block) (String, String, Int, Int) -> Void = { message, url, line, column in
+            let date = Date()
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            let dateString = dateFormatter.string(from: date)
+
+            LogManager.shared.log("Log", description: message, line: "\(line):\(column)")
+
             print("LOG: \(message)")
+            print("Time: \(dateString)")
+            print("File: \(url)")
+            print("Line: \(line)")
+            print("Column: \(column)")
         }
 
-        let consoleError: @convention(block) (String) -> Void = { message in
+        // Define the consoleError block to include error details
+        let consoleError: @convention(block) (String, String, Int, Int) -> Void = { message, url, line, column in
+            let date = Date()
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            let dateString = dateFormatter.string(from: date)
+
+            LogManager.shared.log("Log", description: message, type: .error, line: "\(line):\(column)")
+
+            DispatchQueue.main.async {
+                let scenes = UIApplication.shared.connectedScenes
+                let windowScene = scenes.first as? UIWindowScene
+                let window = windowScene?.windows.first
+
+                if let view = window?.rootViewController?.view {
+                    view.showErrorDisplay(message: "Relay", description: message, type: .error)
+                }
+            }
+
             print("ERROR: \(message)")
+            print("Time: \(dateString)")
+            print("File: \(url)")
+            print("Line: \(line)")
+            print("Column: \(column)")
         }
 
         context.setObject(consoleLog, forKeyedSubscript: "consoleLog" as NSString)
         context.setObject(consoleError, forKeyedSubscript: "consoleError" as NSString)
-        context.evaluateScript("console.log = function(message) { consoleLog(message); }")
-        context.evaluateScript("console.error = function(message) { consoleError(message); }")
+        context.evaluateScript("""
+            function getStackDetails() {
+                return {
+                    url: "hm",
+                    line: 0,
+                    column: 0
+                };
+            }
+
+            console.log = function(message) {
+                var details = getStackDetails();
+                consoleLog(message, details.url, details.line, details.column);
+            };
+
+            console.error = function(message) {
+                var details = getStackDetails();
+                consoleError(message, details.url, details.line, details.column);
+            };
+        """)
 
         let sendRequest: @convention(block) (String, String, [String: String], String?) -> JSValue = { url, method, headers, body in
             self.sendRequest(url: url, method: method, headers: headers, body: body)
@@ -133,7 +211,6 @@ class Relay: ObservableObject {
                 if let error = error {
                     reject?.call(withArguments: [error.localizedDescription])
                 } else if let response = value {
-                    print("Received cookies: \(response)")
                     // Convert response to JSValue
                     let jsResponse = self.convertToJSValue(response, in: context, with: url)
                     resolve?.call(withArguments: [jsResponse])
@@ -191,7 +268,6 @@ class Relay: ObservableObject {
 
     func callWebviewInternal(url: String, completion: @escaping ([String: Any]?, Error?) -> Void) {
         DispatchQueue.main.async {
-            print("Calling Webview")
 //            DispatchQueue.global(qos: .background).asyncAfter(deadline: DispatchTime.now() + 4) {
 //                completion(["HM": "HM"], nil)
 //            }
@@ -244,6 +320,7 @@ class Relay: ObservableObject {
                     print("Rejected the promise. Reason: \(error.localizedDescription)")
                     reject.call(withArguments: [error.localizedDescription])
                 } else if let response = response {
+                    /*
                     self.logger.info("""
                     ------------
                     🌐 URL Response 🌐
@@ -253,6 +330,7 @@ class Relay: ObservableObject {
                     Headers: \(response.headers)
                     Response Body: \(response.body)
                     """)
+                     */
                     let jsResponse = JSValue.fromRequestResponse(response, in: context)
                     resolve.call(withArguments: [jsResponse as Any])
                 }
@@ -327,6 +405,8 @@ class Relay: ObservableObject {
     func createModuleInstance() {
         // Access the TestModule class from the context
         context.evaluateScript("const instance = new source.default();")
+
+        checkModuleType()
     }
 
     func resetModule() {
@@ -336,6 +416,14 @@ class Relay: ObservableObject {
 
         context.exceptionHandler = { _, exception in
             // Handle JavaScript exceptions
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScene = scenes.first as? UIWindowScene
+            let window = windowScene?.windows.first
+            
+            if let view = window?.rootViewController?.view {
+                view.showErrorDisplay(message: exception?.toString() ?? "")
+            }
+
             print(exception?.toString() ?? "Unknown error.")
         }
     }
@@ -350,8 +438,6 @@ class Relay: ObservableObject {
     }
 
     func getDiscover() async -> [DiscoverSection] {
-        print("running discover")
-
         do {
             let value = try await context.callAsyncFunction("instance.discover()")
 
@@ -360,8 +446,8 @@ class Relay: ObservableObject {
 
                 for listingDict in listingsArray {
                     guard let title = listingDict["title"] as? String,
+                          let type = listingDict["type"] as? Int,
                           let dataList = listingDict["data"] as? [[String: Any]] else {
-                        print("failing discover data array")
                         continue
                     }
 
@@ -391,12 +477,10 @@ class Relay: ObservableObject {
                                 total: total
                             )
                             discoverDataList.append(discoverData)
-                        } else {
-                            print(dataItem)
                         }
                     }
 
-                    let discoverSection = DiscoverSection(title: title, list: discoverDataList)
+                    let discoverSection = DiscoverSection(title: title, type: type, list: discoverDataList)
                     discoverSections.append(discoverSection)
                 }
 
@@ -405,6 +489,13 @@ class Relay: ObservableObject {
                 print("Failed to get 'listings' array from JavaScript response.")
             }
         } catch {
+            let scenes = await UIApplication.shared.connectedScenes
+            let windowScene = scenes.first as? UIWindowScene
+            let window = await windowScene?.windows.first
+
+            if let view = await window?.rootViewController?.view {
+                await view.showErrorDisplay(message: "Discover", description: error.localizedDescription, type: .error)
+            }
             print(error.localizedDescription)
         }
         return []
